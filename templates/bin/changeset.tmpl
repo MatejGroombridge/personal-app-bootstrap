@@ -1,0 +1,190 @@
+#!/usr/bin/env bash
+# bin/changeset — interactive release helper for the Matej app store family.
+#
+# What it does:
+#   1. Reads the current versionName / versionCode from app/build.gradle.kts
+#   2. Asks you whether this is a major / minor / patch bump
+#   3. Asks for a one-line summary + a multi-line markdown changelog
+#   4. Bumps versionName + versionCode in app/build.gradle.kts
+#   5. Prepends the new entry to CHANGELOG.md
+#   6. Commits with a conventional message + tags vX.Y.Z
+#   7. (Optional) pushes the tag, which triggers .github/workflows/release.yml
+#
+# Conventions this relies on:
+#   - app/build.gradle.kts contains literal lines:
+#         versionCode = N
+#         versionName = "X.Y.Z"
+#   - CHANGELOG.md exists at the repo root (it's created automatically if missing)
+#   - You're using semver tags of the shape vX.Y.Z
+#
+# Drop this script into ANY of your app repos verbatim — it has no per-app config.
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$REPO_ROOT"
+
+GRADLE_FILE="app/build.gradle.kts"
+CHANGELOG_FILE="CHANGELOG.md"
+
+# ── Colors (no-op in dumb terminals) ─────────────────────────────────────
+if [[ -t 1 ]] && command -v tput >/dev/null 2>&1; then
+  BOLD=$(tput bold); DIM=$(tput dim); RED=$(tput setaf 1); GREEN=$(tput setaf 2)
+  YELLOW=$(tput setaf 3); BLUE=$(tput setaf 4); RESET=$(tput sgr0)
+else
+  BOLD=""; DIM=""; RED=""; GREEN=""; YELLOW=""; BLUE=""; RESET=""
+fi
+
+die()  { echo "${RED}✗${RESET} $*" >&2; exit 1; }
+info() { echo "${BLUE}›${RESET} $*"; }
+ok()   { echo "${GREEN}✓${RESET} $*"; }
+warn() { echo "${YELLOW}!${RESET} $*"; }
+
+# ── Sanity checks ────────────────────────────────────────────────────────
+[[ -f "$GRADLE_FILE" ]] || die "$GRADLE_FILE not found. Run from an app repo root."
+
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  warn "Working tree has uncommitted changes."
+  git status --short
+  read -rp "Continue anyway? [y/N] " ans
+  [[ "$ans" =~ ^[Yy]$ ]] || die "Aborted."
+fi
+
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+if [[ "$CURRENT_BRANCH" != "main" && "$CURRENT_BRANCH" != "master" ]]; then
+  warn "You're on '$CURRENT_BRANCH', not main/master."
+  read -rp "Continue anyway? [y/N] " ans
+  [[ "$ans" =~ ^[Yy]$ ]] || die "Aborted."
+fi
+
+# ── Read current version ─────────────────────────────────────────────────
+CURRENT_VN=$(grep -E '^\s*versionName\s*=' "$GRADLE_FILE" \
+             | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
+CURRENT_VC=$(grep -E '^\s*versionCode\s*=' "$GRADLE_FILE" \
+             | head -n1 | sed -E 's/[^0-9]*([0-9]+).*/\1/')
+
+[[ -n "$CURRENT_VN" ]] || die "Couldn't parse versionName from $GRADLE_FILE"
+[[ -n "$CURRENT_VC" ]] || die "Couldn't parse versionCode from $GRADLE_FILE"
+
+if ! [[ "$CURRENT_VN" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+  die "versionName '$CURRENT_VN' is not pure semver (X.Y.Z). Fix it manually first."
+fi
+MAJOR=${BASH_REMATCH[1]}; MINOR=${BASH_REMATCH[2]}; PATCH=${BASH_REMATCH[3]}
+
+echo
+echo "${BOLD}Current version: ${RESET}${CURRENT_VN} ${DIM}(versionCode ${CURRENT_VC})${RESET}"
+echo
+
+# ── Pick bump type ───────────────────────────────────────────────────────
+NEXT_PATCH="${MAJOR}.${MINOR}.$((PATCH + 1))"
+NEXT_MINOR="${MAJOR}.$((MINOR + 1)).0"
+NEXT_MAJOR="$((MAJOR + 1)).0.0"
+
+echo "${BOLD}What kind of change?${RESET}"
+echo "  ${BOLD}1)${RESET} patch  ${DIM}(bug fix, small tweak)             ${RESET} ${CURRENT_VN} → ${NEXT_PATCH}"
+echo "  ${BOLD}2)${RESET} minor  ${DIM}(new feature, backward compatible) ${RESET} ${CURRENT_VN} → ${NEXT_MINOR}"
+echo "  ${BOLD}3)${RESET} major  ${DIM}(breaking change)                  ${RESET} ${CURRENT_VN} → ${NEXT_MAJOR}"
+echo
+read -rp "> " choice
+
+case "$choice" in
+  1|patch) NEW_VN="$NEXT_PATCH" ;;
+  2|minor) NEW_VN="$NEXT_MINOR" ;;
+  3|major) NEW_VN="$NEXT_MAJOR" ;;
+  *) die "Invalid choice: $choice" ;;
+esac
+
+NEW_VC=$((CURRENT_VC + 1))
+TAG="v${NEW_VN}"
+
+# ── Capture description ──────────────────────────────────────────────────
+echo
+echo "${BOLD}Description${RESET} ${DIM}(one line — used for the commit message, GitHub release title, and changelog entry)${RESET}"
+read -rp "> " SUMMARY
+[[ -n "$SUMMARY" ]] || die "Description cannot be empty."
+
+# ── Confirm ──────────────────────────────────────────────────────────────
+echo
+echo "${BOLD}About to:${RESET}"
+echo "  • Bump versionName ${CURRENT_VN} → ${GREEN}${NEW_VN}${RESET}"
+echo "  • Bump versionCode ${CURRENT_VC} → ${GREEN}${NEW_VC}${RESET}"
+echo "  • Prepend release notes to ${CHANGELOG_FILE}"
+echo "  • Commit + tag ${BOLD}${TAG}${RESET}"
+echo
+read -rp "Proceed? [Y/n] " ans
+[[ -z "$ans" || "$ans" =~ ^[Yy]$ ]] || die "Aborted."
+
+# ── Patch app/build.gradle.kts ───────────────────────────────────────────
+# Use a temp file + mv for cross-platform sed safety (no -i'' nonsense).
+TMP=$(mktemp)
+awk -v new_vn="$NEW_VN" -v new_vc="$NEW_VC" '
+  /^[[:space:]]*versionCode[[:space:]]*=/ && !done_vc { sub(/=[[:space:]]*[0-9]+/, "= " new_vc); done_vc=1 }
+  /^[[:space:]]*versionName[[:space:]]*=/ && !done_vn { sub(/"[^"]+"/, "\"" new_vn "\"");      done_vn=1 }
+  { print }
+' "$GRADLE_FILE" > "$TMP"
+mv "$TMP" "$GRADLE_FILE"
+ok "Updated $GRADLE_FILE"
+
+# ── Prepend to CHANGELOG.md ──────────────────────────────────────────────
+TODAY=$(date +%Y-%m-%d)
+
+if [[ ! -f "$CHANGELOG_FILE" ]]; then
+  cat > "$CHANGELOG_FILE" <<EOF
+# Changelog
+
+All notable changes to this app. Format roughly follows [Keep a Changelog](https://keepachangelog.com).
+The most recent release is at the top. Each entry is consumed verbatim by the release pipeline and
+shown to users on the app's detail screen in the Matej Store.
+
+EOF
+fi
+
+NEW_ENTRY="## ${TAG} — ${TODAY}
+
+${SUMMARY}
+"
+
+# Insert the new entry after the file header (everything up to and including the
+# first blank line after the H1) and before any existing release entries.
+HEADER_END=$(awk '
+  /^# / { in_header=1; print NR; next }
+  in_header && /^[[:space:]]*$/ { print NR; exit }
+' "$CHANGELOG_FILE" | tail -n1)
+
+if [[ -z "$HEADER_END" ]]; then
+  # Couldn't find a header — just prepend the entry.
+  printf '%s\n%s' "$NEW_ENTRY" "$(cat "$CHANGELOG_FILE")" > "$CHANGELOG_FILE.tmp"
+else
+  {
+    head -n "$HEADER_END" "$CHANGELOG_FILE"
+    echo
+    echo "$NEW_ENTRY"
+    tail -n +"$((HEADER_END + 1))" "$CHANGELOG_FILE"
+  } > "$CHANGELOG_FILE.tmp"
+fi
+mv "$CHANGELOG_FILE.tmp" "$CHANGELOG_FILE"
+ok "Prepended to $CHANGELOG_FILE"
+
+# ── Commit + tag ─────────────────────────────────────────────────────────
+git add "$GRADLE_FILE" "$CHANGELOG_FILE"
+git commit -m "Release ${TAG} — ${SUMMARY}" >/dev/null
+ok "Committed"
+
+git tag -a "$TAG" -m "${SUMMARY}"
+ok "Tagged ${BOLD}${TAG}${RESET}"
+
+# ── Push? ────────────────────────────────────────────────────────────────
+echo
+read -rp "Push commit + tag now? [Y/n] " ans
+if [[ -z "$ans" || "$ans" =~ ^[Yy]$ ]]; then
+  git push
+  git push origin "$TAG"
+  ok "Pushed."
+
+  REMOTE_URL=$(git remote get-url origin 2>/dev/null | sed -E 's#git@github.com:#https://github.com/#; s#\.git$##')
+  if [[ -n "$REMOTE_URL" ]]; then
+    info "Watch the release: ${REMOTE_URL}/actions"
+  fi
+else
+  warn "Not pushed. When ready: ${DIM}git push && git push origin ${TAG}${RESET}"
+fi

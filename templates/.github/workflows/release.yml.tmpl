@@ -1,0 +1,166 @@
+name: Release
+
+# Builds & signs a release APK on every v*.*.* tag, attaches it to a GitHub
+# Release, then patches the central manifest at
+# https://matejgroombridge.github.io/personal-app-store/manifest.json so the
+# Groom Hub app sees this app's new version.
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write    # to attach the APK to the GitHub Release of THIS repo
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # ── Decode keystore ───────────────────────────────────────
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > $RUNNER_TEMP/release.jks
+          echo "KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> $GITHUB_ENV
+
+      # ── Build signed release APK ──────────────────────────────
+      # The env var names below MUST match what app/build.gradle.kts reads in
+      # its signingConfigs { create("release") { ... } } block.
+      - name: Assemble release APK
+        env:
+          KEYSTORE_PATH:     ${{ env.KEYSTORE_PATH }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS:         ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD:      ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew :app:assembleRelease --no-daemon
+
+      # ── Compute metadata ──────────────────────────────────────
+      - name: Extract metadata
+        id: meta
+        run: |
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -n1)
+          BUILD_TOOLS=$(ls $ANDROID_HOME/build-tools | sort -V | tail -n1)
+          AAPT="$ANDROID_HOME/build-tools/$BUILD_TOOLS/aapt"
+
+          PKG=$($AAPT dump badging "$APK" | awk -F"'" '/package: name=/{print $2}')
+          VC=$($AAPT dump badging "$APK"  | awk -F"'" '/package: name=/{print $4}')
+          VN=$($AAPT dump badging "$APK"  | awk -F"'" '/package: name=/{print $6}')
+          MIN=$($AAPT dump badging "$APK" | awk -F"'" '/sdkVersion:/{print $2}')
+
+          SHA=$(sha256sum "$APK" | awk '{print $1}')
+          SIZE=$(stat -c%s "$APK")
+
+          NEW_NAME="${PKG}-${VN}.apk"
+          mv "$APK" "app/build/outputs/apk/release/$NEW_NAME"
+          APK="app/build/outputs/apk/release/$NEW_NAME"
+
+          {
+            echo "apk_path=$APK"
+            echo "apk_name=$NEW_NAME"
+            echo "package=$PKG"
+            echo "version_code=$VC"
+            echo "version_name=$VN"
+            echo "min_sdk=$MIN"
+            echo "sha256=$SHA"
+            echo "size=$SIZE"
+          } >> $GITHUB_OUTPUT
+
+      # ── Publish APK as a GitHub Release asset ─────────────────
+      - name: Create GitHub Release
+        id: gh_release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.meta.outputs.apk_path }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Update the central manifest.json ──────────────────────
+      - name: Checkout manifest repo
+        uses: actions/checkout@v4
+        with:
+          # Manifest served via GitHub Pages out of /docs on this repo.
+          repository: matejgroombridge/personal-app-store
+          ref: main
+          token: ${{ secrets.MANIFEST_REPO_TOKEN }}
+          path: manifest-repo
+
+      - name: Patch manifest.json
+        env:
+          PKG:          ${{ steps.meta.outputs.package }}
+          # Display name shown in the Groom Hub app. Edit per-app at bootstrap
+          # time — leaving this as the auto-derived repo slug usually works,
+          # but a curated DISPLAY_NAME reads better.
+          DISPLAY_NAME: "__DISPLAY_NAME__"
+          DESCRIPTION:  "__DISPLAY_NAME__ — part of the personal app suite."
+          CATEGORY:     "Personal"
+          VC:           ${{ steps.meta.outputs.version_code }}
+          VN:           ${{ steps.meta.outputs.version_name }}
+          MIN_SDK:      ${{ steps.meta.outputs.min_sdk }}
+          SHA:          ${{ steps.meta.outputs.sha256 }}
+          SIZE:         ${{ steps.meta.outputs.size }}
+          APK_NAME:     ${{ steps.meta.outputs.apk_name }}
+          REPO:         ${{ github.repository }}
+          TAG:          ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import json, os, datetime, urllib.parse, pathlib, re
+          path = pathlib.Path("manifest-repo/docs/manifest.json")
+          data = json.loads(path.read_text()) if path.exists() else {"apps": []}
+          apps = [a for a in data.get("apps", []) if a.get("package_name") != os.environ["PKG"]]
+          apk_url = (
+              f"https://github.com/{os.environ['REPO']}/releases/download/"
+              f"{urllib.parse.quote(os.environ['TAG'])}/{os.environ['APK_NAME']}"
+          )
+
+          # Pull the most recent CHANGELOG.md entry (the chunk between the first
+          # `## ` heading and the next one) so the in-app detail screen shows
+          # real release notes. Falls back to "" if the file or section is missing.
+          changelog = ""
+          cl_path = pathlib.Path("CHANGELOG.md")
+          if cl_path.exists():
+              text = cl_path.read_text()
+              m = re.search(r"^## .+?(?=^## |\Z)", text, flags=re.MULTILINE | re.DOTALL)
+              if m:
+                  changelog = m.group(0).strip()
+
+          apps.append({
+              "package_name":   os.environ["PKG"],
+              "display_name":   os.environ["DISPLAY_NAME"],
+              "description":    os.environ["DESCRIPTION"],
+              "version_code":   int(os.environ["VC"]),
+              "version_name":   os.environ["VN"],
+              "apk_url":        apk_url,
+              "apk_sha256":     os.environ["SHA"],
+              "apk_size_bytes": int(os.environ["SIZE"]),
+              "min_sdk":        int(os.environ["MIN_SDK"]),
+              "released_at":    datetime.datetime.utcnow().isoformat() + "Z",
+              "source_url":     f"https://github.com/{os.environ['REPO']}",
+              "category":       os.environ["CATEGORY"],
+              "changelog":      changelog,
+          })
+          data["apps"] = sorted(apps, key=lambda a: a["display_name"].lower())
+          data["generated_at"] = datetime.datetime.utcnow().isoformat() + "Z"
+          path.write_text(json.dumps(data, indent=2) + "\n")
+          PY
+
+      - name: Commit & push manifest update
+        working-directory: manifest-repo
+        run: |
+          git config user.name  "release-bot"
+          git config user.email "release-bot@users.noreply.github.com"
+          git add docs/manifest.json
+          if git diff --cached --quiet; then
+            echo "Manifest unchanged — nothing to commit."
+          else
+            git commit -m "Update ${{ steps.meta.outputs.package }} → v${{ steps.meta.outputs.version_name }}"
+            git push
+          fi
