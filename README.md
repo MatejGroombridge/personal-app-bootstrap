@@ -31,8 +31,8 @@ bootstrap/
 ├── bin/
 │   └── bootstrap-app.sh               ← the scaffolding script
 ├── docs/
-│   └── NEW_APP_GUIDE.md               ← comprehensive ref for AI agents + humans
 └── templates/                          ← canonical file contents (one source of truth)
+    ├── agent.md                           ← comprehensive ref for AI agents + humans
     ├── .github/workflows/release.yml.tmpl
     ├── .gitignore.tmpl
     ├── CHANGELOG.md.tmpl
@@ -136,7 +136,7 @@ Should end in `BUILD SUCCESSFUL`.
 
 - **Use `bin/bootstrap-app.sh`** for the mechanical 90% of new-app setup
   (file tree, build files, workflow, theme).
-- **Use `docs/NEW_APP_GUIDE.md`** as the spec you feed to an AI agent so it
+- **Use `agent.md`** as the spec you feed to an AI agent so it
   understands the architecture and conventions deeply enough to write the
   actual app functionality on top of the scaffold.
 

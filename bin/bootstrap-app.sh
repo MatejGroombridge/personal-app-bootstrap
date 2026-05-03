@@ -43,7 +43,7 @@
 #      KEY_PASSWORD, MANIFEST_REPO_TOKEN) in GitHub repo settings
 #   6. Run ./bin/changeset to publish v0.1.0
 #
-# See docs/NEW_APP_GUIDE.md for the full walkthrough.
+# See agent.md in the bootstrapped repo for the full walkthrough.
 
 set -euo pipefail
 
@@ -184,5 +184,5 @@ cat <<EOF
   ${BOLD}6.${RESET} Have an AI agent build out the app's actual functionality.
   ${BOLD}7.${RESET} ./bin/changeset to publish v0.1.0
 
-See bootstrap/docs/NEW_APP_GUIDE.md for the full reference.
+See agent.md in this repo for the full reference.
 EOF
