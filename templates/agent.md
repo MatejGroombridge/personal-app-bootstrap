@@ -830,6 +830,247 @@ transition. If you want a glyph, add
 `<item name="windowSplashScreenAnimatedIcon">@drawable/...</item>` to both
 `values/themes.xml` and `values-night/themes.xml`.
 
+### 10.6 The Standard Home Screen Layout
+
+Every list-or-grid home screen in the family follows the same skeleton.
+This is what makes Groom Hub, Habit Tracker, etc. feel like one product.
+
+#### Top app bar
+
+Use **`LargeTopAppBar`**, never the small `TopAppBar`, for the home
+screen's title. It places the heading low and large, then collapses on
+scroll. Wire the scroll behaviour through the `Scaffold`:
+
+```kotlin
+val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
+Scaffold(
+    modifier = Modifier
+        .fillMaxSize()
+        .nestedScroll(scrollBehavior.nestedScrollConnection),
+    containerColor = MaterialTheme.colorScheme.background,
+    topBar = {
+        LargeTopAppBar(
+            title = { Text(stringResource(R.string.app_name)) },
+            actions = {
+                IconButton(onClick = onOpenSettings) {
+                    Icon(Icons.Outlined.Settings, contentDescription = "Settings")
+                }
+            },
+            colors = TopAppBarDefaults.largeTopAppBarColors(
+                containerColor = MaterialTheme.colorScheme.background,
+                scrolledContainerColor = MaterialTheme.colorScheme.background,
+            ),
+            scrollBehavior = scrollBehavior,
+        )
+    },
+) { padding -> /* content */ }
+```
+
+Both `containerColor` overrides must equal `colorScheme.background` so
+the bar is flush with the page in either collapsed or expanded state.
+
+#### Iconography
+
+Always use the **`Outlined`** Material icon variants
+(`Icons.Outlined.Settings`, `Icons.Outlined.Add`,
+`Icons.AutoMirrored.Outlined.ArrowBack`, …). The filled variants are
+visually heavier and look out of place against the spacious typography.
+
+#### List / grid container
+
+| Layout | Use |
+|---|---|
+| One item per row (Groom Hub-style app list) | `LazyColumn` |
+| Two items per row (Habit Tracker-style grid) | `LazyVerticalGrid(columns = GridCells.Fixed(2))` |
+| ≥3 items per row | Adaptive `GridCells.Adaptive(minSize = 160.dp)` |
+
+`contentPadding` is **always** `start = 20.dp, end = 20.dp`, with a
+`top` of `padding.calculateTopPadding() + 4.dp` (or `+ 8.dp` if there's
+a sticky banner above the items) and a `bottom` of
+`padding.calculateBottomPadding() + 24.dp` (`+ 96.dp` if a FAB is
+present, to keep the last row reachable).
+
+`horizontalArrangement = Arrangement.spacedBy(12.dp)` and
+`verticalArrangement = Arrangement.spacedBy(12.dp)` — never larger.
+
+#### The standard card
+
+The home-screen card is **rectangular**, full-width-of-its-cell, and
+identical in shape across every app:
+
+```kotlin
+Surface(
+    onClick = onClick,
+    shape = RoundedCornerShape(20.dp),
+    color = MaterialTheme.colorScheme.surfaceContainer,
+    tonalElevation = 0.dp,
+    modifier = Modifier.fillMaxWidth(),
+) {
+    Row(
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // 1. Leading icon — 48-56.dp box, surfaceContainerHigh background, 14.dp corners
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Apps,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(26.dp),
+            )
+        }
+        Spacer(Modifier.width(14.dp))
+
+        // 2. Title + optional subtitle (titleMedium SemiBold; bodySmall onSurfaceVariant)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(name, style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2, overflow = TextOverflow.Ellipsis)
+            // optional subtitle line — keep to 1 line, bodySmall, onSurfaceVariant
+        }
+
+        // 3. Optional trailing affordance (button, chevron, switch). Omit
+        //    entirely if the whole row is the affordance.
+    }
+}
+```
+
+Hard rules for cards:
+
+- **No `Card`/`CardDefaults`.** Use `Surface` with `surfaceContainer`.
+- **No square `aspectRatio(1f)` tiles.** Two-up grids use rectangular
+  rows; the leading icon provides the visual interest.
+- **No "tap to do X" helper text.** The card itself is the affordance —
+  whether by tap or long-press. State is communicated by colour
+  (`primaryContainer` when active) and by the leading icon swap.
+- **Never both** a trailing button **and** the whole row being clickable
+  for the same action. Pick one.
+
+#### Selected / active state
+
+When a card represents an "on" or "completed" state, animate its
+container colour to `primaryContainer` and its content colour to
+`onPrimaryContainer` via `animateColorAsState`. Swap the leading icon's
+background to `primary` with `onPrimary` foreground. Do not add a
+checkmark overlay — the colour change *is* the indication.
+
+---
+
+### 10.7 Settings — Quick Spec
+
+A standardised Settings screen every app in the family should follow.
+
+#### Entry point
+
+A **Settings** icon (`Icons.Outlined.Settings`) lives in the top-right
+of the home screen's `LargeTopAppBar`, in `actions = { ... }`. Tap
+routes to `"settings"`. (See §10.6 for the full top-bar snippet.)
+
+#### Settings screen structure
+
+A `Scaffold` with `containerColor = colorScheme.background` and its own
+**small** `TopAppBar` (back arrow `Icons.AutoMirrored.Outlined.ArrowBack`
++ "Settings" title — *not* a `LargeTopAppBar`; the small bar is correct
+for a non-root screen). Body is a single scrollable `Column` of grouped
+sections.
+
+Each section is a `Surface(surfaceContainer, RoundedCornerShape(20.dp))`
+with `padding(20.dp)`, preceded by a one-line header:
+
+```kotlin
+@Composable
+private fun Section(title: String, content: @Composable () -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = title.uppercase(),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
+        )
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) { content() }
+        }
+    }
+}
+```
+
+Section headers are `labelSmall`, `onSurfaceVariant`, **all-caps**
+(*not* `titleSmall`/`primary`).
+
+#### Standard sections
+
+| Section | Items |
+|---|---|
+| **Appearance** | Theme: System / Light / Dark (`FilterChip` row, persisted in DataStore) |
+| **About** | App name (`titleMedium`, SemiBold), `Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})` (`bodyMedium`, `onSurfaceVariant`) |
+
+Add app-specific sections (Notifications, Data, app-specific toggles,
+etc.) **between** Appearance and About.
+
+#### Standard row patterns
+
+Inside a Section, the available row patterns are:
+
+- **Plain text rows** (e.g. About): a `Text(titleMedium)` line and
+  optionally a `Text(bodyMedium, onSurfaceVariant)` supporting line.
+- **Chip rows** (e.g. Theme): an inline `Row(spacedBy = 8.dp)` of
+  `FilterChip`s. Use this when there are 2-4 mutually-exclusive options.
+- **Toggle rows** (e.g. Show streaks): a `Row(verticalAlignment =
+  CenterVertically)` with a `Column.weight(1f)` (title `titleMedium` +
+  optional subtitle `bodySmall, onSurfaceVariant`) and a trailing
+  `Switch`.
+- **Text input rows** (e.g. URL): an `OutlinedTextField` plus a small
+  helper `Text(bodySmall, onSurfaceVariant)` and a `TextButton` to
+  apply, when the change must be batched (rare — see "no Save button"
+  below).
+- **Destructive rows**: a `TextButton(colors = ButtonDefaults
+  .textButtonColors(contentColor = colorScheme.error))` that opens an
+  `AlertDialog` for confirmation.
+
+Never nest a Surface inside a Section; the Section *is* the surface.
+
+#### State
+
+- All settings live in `SettingsRepository` (DataStore preferences, one
+  `Preferences.Key<T>` per setting).
+- Exposed as `Flow<Settings>` and consumed via
+  `vm.settings.collectAsStateWithLifecycle()`.
+- Writes go through the ViewModel: `vm.setThemeMode(ThemeMode.Dark)`,
+  `vm.setShowStreaks(true)`, …
+- The same `SettingsViewModel` instance is hoisted to `MainActivity`
+  and passed to *both* `AppTheme(themeMode = settings.themeMode)` and
+  to the home screen — so theme changes apply instantly app-wide and
+  any home-screen-affecting setting (e.g. "Show streaks") is read from
+  the same source of truth.
+
+#### Conventions
+
+- **No nested settings screens** — keep flat. If a section gets
+  crowded, expand it inline.
+- **No "Save" button** for toggles or chips — every change persists
+  immediately. Text-input rows that hit the network on apply are the
+  only exception.
+- **Destructive actions** (Clear data, Reset, etc.) always use
+  `AlertDialog` confirmation.
+- Padding: 20dp horizontal at the screen edge, 16dp between sections
+  (`Arrangement.spacedBy(16.dp)` on the outer `Column`), 20dp inside
+  each Section surface.
+- Default to `false` / `Off` / `System` for any new setting unless the
+  app's UX is genuinely better with it on by default. Surprising the
+  user with an enabled toggle is worse than burying a useful one.
+
 ---
 
 ## 11. Common Patterns & Conventions
