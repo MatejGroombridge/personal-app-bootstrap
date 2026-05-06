@@ -830,246 +830,506 @@ transition. If you want a glyph, add
 `<item name="windowSplashScreenAnimatedIcon">@drawable/...</item>` to both
 `values/themes.xml` and `values-night/themes.xml`.
 
-### 10.6 The Standard Home Screen Layout
-
-Every list-or-grid home screen in the family follows the same skeleton.
-This is what makes Groom Hub, Habit Tracker, etc. feel like one product.
-
-#### Top app bar
-
-Use **`LargeTopAppBar`**, never the small `TopAppBar`, for the home
-screen's title. It places the heading low and large, then collapses on
-scroll. Wire the scroll behaviour through the `Scaffold`:
-
-```kotlin
-val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-
-Scaffold(
-    modifier = Modifier
-        .fillMaxSize()
-        .nestedScroll(scrollBehavior.nestedScrollConnection),
-    containerColor = MaterialTheme.colorScheme.background,
-    topBar = {
-        LargeTopAppBar(
-            title = { Text(stringResource(R.string.app_name)) },
-            actions = {
-                IconButton(onClick = onOpenSettings) {
-                    Icon(Icons.Outlined.Settings, contentDescription = "Settings")
-                }
-            },
-            colors = TopAppBarDefaults.largeTopAppBarColors(
-                containerColor = MaterialTheme.colorScheme.background,
-                scrolledContainerColor = MaterialTheme.colorScheme.background,
-            ),
-            scrollBehavior = scrollBehavior,
-        )
-    },
-) { padding -> /* content */ }
-```
-
-Both `containerColor` overrides must equal `colorScheme.background` so
-the bar is flush with the page in either collapsed or expanded state.
-
-#### Iconography
-
-Always use the **`Outlined`** Material icon variants
-(`Icons.Outlined.Settings`, `Icons.Outlined.Add`,
-`Icons.AutoMirrored.Outlined.ArrowBack`, …). The filled variants are
-visually heavier and look out of place against the spacious typography.
-
-#### List / grid container
-
-| Layout | Use |
-|---|---|
-| One item per row (Groom Hub-style app list) | `LazyColumn` |
-| Two items per row (Habit Tracker-style grid) | `LazyVerticalGrid(columns = GridCells.Fixed(2))` |
-| ≥3 items per row | Adaptive `GridCells.Adaptive(minSize = 160.dp)` |
-
-`contentPadding` is **always** `start = 20.dp, end = 20.dp`, with a
-`top` of `padding.calculateTopPadding() + 4.dp` (or `+ 8.dp` if there's
-a sticky banner above the items) and a `bottom` of
-`padding.calculateBottomPadding() + 24.dp` (`+ 96.dp` if a FAB is
-present, to keep the last row reachable).
-
-`horizontalArrangement = Arrangement.spacedBy(12.dp)` and
-`verticalArrangement = Arrangement.spacedBy(12.dp)` — never larger.
-
-#### The standard card
-
-The home-screen card is **rectangular**, full-width-of-its-cell, and
-identical in shape across every app:
-
-```kotlin
-Surface(
-    onClick = onClick,
-    shape = RoundedCornerShape(20.dp),
-    color = MaterialTheme.colorScheme.surfaceContainer,
-    tonalElevation = 0.dp,
-    modifier = Modifier.fillMaxWidth(),
-) {
-    Row(
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // 1. Leading icon — 48-56.dp box, surfaceContainerHigh background, 14.dp corners
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.Apps,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(26.dp),
-            )
-        }
-        Spacer(Modifier.width(14.dp))
-
-        // 2. Title + optional subtitle (titleMedium SemiBold; bodySmall onSurfaceVariant)
-        Column(modifier = Modifier.weight(1f)) {
-            Text(name, style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 2, overflow = TextOverflow.Ellipsis)
-            // optional subtitle line — keep to 1 line, bodySmall, onSurfaceVariant
-        }
-
-        // 3. Optional trailing affordance (button, chevron, switch). Omit
-        //    entirely if the whole row is the affordance.
-    }
-}
-```
-
-Hard rules for cards:
-
-- **No `Card`/`CardDefaults`.** Use `Surface` with `surfaceContainer`.
-- **No square `aspectRatio(1f)` tiles.** Two-up grids use rectangular
-  rows; the leading icon provides the visual interest.
-- **No "tap to do X" helper text.** The card itself is the affordance —
-  whether by tap or long-press. State is communicated by colour
-  (`primaryContainer` when active) and by the leading icon swap.
-- **Never both** a trailing button **and** the whole row being clickable
-  for the same action. Pick one.
-
-#### Selected / active state
-
-When a card represents an "on" or "completed" state, animate its
-container colour to `primaryContainer` and its content colour to
-`onPrimaryContainer` via `animateColorAsState`. Swap the leading icon's
-background to `primary` with `onPrimary` foreground. Do not add a
-checkmark overlay — the colour change *is* the indication.
-
----
-
-### 10.7 Settings — Quick Spec
+### 10.6 Settings — Quick Spec
 
 A standardised Settings screen every app in the family should follow.
 
 #### Entry point
 
-A **Settings** icon (`Icons.Outlined.Settings`) lives in the top-right
-of the home screen's `LargeTopAppBar`, in `actions = { ... }`. Tap
-routes to `"settings"`. (See §10.6 for the full top-bar snippet.)
+A **Settings** icon (`Icons.Filled.Settings`) lives in the top-right of the home screen's `TopAppBar`, in `actions = { ... }`. Tap routes to `"settings"`.
+
+```kotlin
+TopAppBar(
+    title = { Text(stringResource(R.string.app_name)) },
+    actions = {
+        IconButton(onClick = onOpenSettings) {
+            Icon(Icons.Filled.Settings, contentDescription = "Settings")
+        }
+    }
+)
+```
 
 #### Settings screen structure
 
-A `Scaffold` with `containerColor = colorScheme.background` and its own
-**small** `TopAppBar` (back arrow `Icons.AutoMirrored.Outlined.ArrowBack`
-+ "Settings" title — *not* a `LargeTopAppBar`; the small bar is correct
-for a non-root screen). Body is a single scrollable `Column` of grouped
-sections.
-
-Each section is a `Surface(surfaceContainer, RoundedCornerShape(20.dp))`
-with `padding(20.dp)`, preceded by a one-line header:
-
-```kotlin
-@Composable
-private fun Section(title: String, content: @Composable () -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = title.uppercase(),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
-        )
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column(modifier = Modifier.padding(20.dp)) { content() }
-        }
-    }
-}
-```
-
-Section headers are `labelSmall`, `onSurfaceVariant`, **all-caps**
-(*not* `titleSmall`/`primary`).
+A `Scaffold` with its own `TopAppBar` (back arrow + "Settings" title), single scrollable `Column` of grouped sections separated by `Spacer`s + section headers (`titleSmall`, `colorScheme.primary`, all-caps).
 
 #### Standard sections
 
 | Section | Items |
 |---|---|
-| **Appearance** | Theme: System / Light / Dark (`FilterChip` row, persisted in DataStore) |
-| **About** | App name (`titleMedium`, SemiBold), `Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})` (`bodyMedium`, `onSurfaceVariant`) |
+| **Appearance** | Theme: System / Light / Dark (FilterChip row, persisted in DataStore) |
+| **About** | App name (`bodyLarge`), `Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})` (`bodyMedium`, `onSurfaceVariant`) |
 
-Add app-specific sections (Notifications, Data, app-specific toggles,
-etc.) **between** Appearance and About.
-
-#### Standard row patterns
-
-Inside a Section, the available row patterns are:
-
-- **Plain text rows** (e.g. About): a `Text(titleMedium)` line and
-  optionally a `Text(bodyMedium, onSurfaceVariant)` supporting line.
-- **Chip rows** (e.g. Theme): an inline `Row(spacedBy = 8.dp)` of
-  `FilterChip`s. Use this when there are 2-4 mutually-exclusive options.
-- **Toggle rows** (e.g. Show streaks): a `Row(verticalAlignment =
-  CenterVertically)` with a `Column.weight(1f)` (title `titleMedium` +
-  optional subtitle `bodySmall, onSurfaceVariant`) and a trailing
-  `Switch`.
-- **Text input rows** (e.g. URL): an `OutlinedTextField` plus a small
-  helper `Text(bodySmall, onSurfaceVariant)` and a `TextButton` to
-  apply, when the change must be batched (rare — see "no Save button"
-  below).
-- **Destructive rows**: a `TextButton(colors = ButtonDefaults
-  .textButtonColors(contentColor = colorScheme.error))` that opens an
-  `AlertDialog` for confirmation.
-
-Never nest a Surface inside a Section; the Section *is* the surface.
+Add app-specific sections (Notifications, Sync, Data, etc.) **between** Appearance and About. Each section header is one line; each row is a `Surface(tonalElevation = 1.dp)` with rounded 16dp corners, 16dp internal padding, a label + optional supporting text + trailing control (chip/switch/chevron).
 
 #### State
 
-- All settings live in `SettingsRepository` (DataStore preferences, one
-  `Preferences.Key<T>` per setting).
-- Exposed as `Flow<Settings>` and consumed via
-  `vm.settings.collectAsStateWithLifecycle()`.
-- Writes go through the ViewModel: `vm.setThemeMode(ThemeMode.Dark)`,
-  `vm.setShowStreaks(true)`, …
-- The same `SettingsViewModel` instance is hoisted to `MainActivity`
-  and passed to *both* `AppTheme(themeMode = settings.themeMode)` and
-  to the home screen — so theme changes apply instantly app-wide and
-  any home-screen-affecting setting (e.g. "Show streaks") is read from
-  the same source of truth.
+- All settings live in `SettingsRepository` (DataStore preferences, one `Preferences.Key<T>` per setting).
+- Exposed as `Flow<Settings>` and consumed via `vm.settings.collectAsState()`.
+- Writes go through ViewModel: `vm.setThemeMode(ThemeMode.Dark)`.
 
 #### Conventions
 
-- **No nested settings screens** — keep flat. If a section gets
-  crowded, expand it inline.
-- **No "Save" button** for toggles or chips — every change persists
-  immediately. Text-input rows that hit the network on apply are the
-  only exception.
-- **Destructive actions** (Clear data, Reset, etc.) always use
-  `AlertDialog` confirmation.
-- Padding: 20dp horizontal at the screen edge, 16dp between sections
-  (`Arrangement.spacedBy(16.dp)` on the outer `Column`), 20dp inside
-  each Section surface.
-- Default to `false` / `Off` / `System` for any new setting unless the
-  app's UX is genuinely better with it on by default. Surprising the
-  user with an enabled toggle is worse than burying a useful one.
+- No nested settings screens — keep flat. If a section gets crowded, expand it inline.
+- No "Save" button — every change persists immediately.
+- Destructive actions (Clear cache, Reset, etc.) use `AlertDialog` confirmation.
+- Padding: 20dp horizontal, 16dp between rows, 24dp between sections.
+
+---
+
+## 10.7 Design Language & Interaction Cookbook
+
+> This section is the source of truth for the visual + interaction
+> language any app in the family should adopt. It captures every
+> learning from the Habit Tracker build so future apps feel like part
+> of the same suite from day one. Treat each subsection as a checklist
+> the AI agent should consult before introducing a new screen,
+> control, dialog, or animation.
+
+### 10.7.1 Foundational principles
+
+- **Text-first, low-clutter rows.** Settings rows do **not** carry
+  decorative leading icons. The label sits left, the trailing control
+  (Switch, value, chevron, accent text) sits right. Icons are reserved
+  for *identity* (a habit's accent badge) or *affordance* (a back
+  arrow, a chevron). Cosmetic icons inside list rows are forbidden —
+  they break consistency the moment some rows have one and others
+  don't.
+- **One control per row.** Mixing a Switch + a chevron + a value pill
+  on the same row creates ambiguity about what the row does. If a
+  setting needs more than one affordance, give it its own card or
+  push it onto its own screen via a chevron `NavRow`.
+- **Every visible row in a card has the same height.** Define a
+  `private val SETTINGS_ROW_MIN_HEIGHT = 56.dp` and apply it via
+  `Modifier.heightIn(min = SETTINGS_ROW_MIN_HEIGHT)`. Padding alone
+  cannot guarantee row alignment because controls (Switch, chevron,
+  Text) have different intrinsic heights.
+- **Cards have `contentPadding = 0.dp`** and rows manage their own
+  horizontal/vertical padding (`horizontal = 16.dp, vertical = 4.dp`
+  is the unified value when a `heightIn(min = …)` is in play). Always
+  use `Divider()` between rows inside a card — never `Arrangement.spacedBy`
+  inside settings cards.
+- **Group identity, not chronology.** Sections in Settings are
+  ordered by *what mental concept they belong to*, not by when they
+  were added: **Zen Mode → Appearance → Reminders → General → NFC
+  scans → About**. The Zen Mode card sits first because it is a
+  global mode switch.
+- **No loading spinners on instant operations.** Persistence via
+  DataStore is fast enough that you should never show a spinner;
+  changes feel atomic. Reserve spinners for actual network I/O.
+
+### 10.7.2 Colour & palette discipline
+
+- **Curate, don't multiply.** A palette of 8 entries with strong hue
+  separation reads better than 14 close ones. Audit for duplicates
+  (e.g. blush vs. rose were almost identical — replaced with teal).
+- **Order palette entries along the colour wheel.** When a user picks
+  a colour from a chip strip, the strip should flow
+  `warm → green → cyan → blue → cool` so adjacent chips look
+  related. The Habit Tracker order is:
+  `Blush → Peach → Butter → Mint → Teal → Sky → Lavender → Fog`.
+- **Each entry has 4 channels:** `light`, `dark`, `accent`, `onColor`.
+    - `light` = card background in light mode
+    - `dark` = card background in dark mode
+    - `accent` = stronger fill used for icon tiles, chips, and confetti
+    - `onColor` = legible text/icon colour over `light`
+- **Persist by string key, not by enum/index.** Future palette edits
+  must not invalidate stored data. Provide an `entry(key)` lookup that
+  falls back to a `defaultEntry` if the key is unknown.
+- **AMOLED override.** Add a `Boolean amoled` setting. When the
+  resolved theme is dark and `amoled` is true, force the Material 3
+  `background`, `surface`, and `surfaceContainer*` slots to pure
+  black. Keep accents/primary at their normal value so the UI stays
+  recognisable.
+
+### 10.7.3 Iconography catalogue
+
+- **Two distinct icon roles:**
+    1. *Identity icons* — chosen by the user per habit/item. Visible
+       everywhere that item is referenced. Stored as a string key into a
+       curated catalogue. Icons should map to common nouns/verbs ("Run",
+       "Read", "Drink", "Meds") so users find their concept fast.
+    2. *Affordance icons* — back arrow, chevron, FAB plus, NFC, settings
+       gear. Use Material outlined variants for consistency.
+- **Catalogue size: ~25–35 entries.** Beyond that the picker becomes
+  hard to scan. Group visually similar ideas under one icon.
+- **Icon picker layout: equal-weight wrap-grid** of 56dp circular
+  tiles, currently selected tile filled with the chosen accent.
+
+### 10.7.4 Spacing, padding, sizes (the Habit Tracker tokens)
+
+| Token | Value | Where used |
+|---|---|---|
+| Settings row min height | 56.dp | Toggles, nav rows, week-start row |
+| Card corner radius | 20.dp | `SettingsCard`, in-app dialogs |
+| Chip / small pill corner | 14.dp | NFC link copy pill, action chips |
+| Inter-section gap | 20.dp | Between SectionCaption + previous card |
+| Section caption padding | 16.dp h, 8.dp top, 8.dp bottom | `SectionCaption` |
+| Editor dialog parent gap | 14.dp | `Arrangement.spacedBy` between groups |
+| Editor sub-gap | 6.dp | Inside an `EditorSection` between header + body |
+| Habit grid card | 1f weight, ~96.dp tall | 2-col grid on Today |
+| Day-cell square | matches grid cell width | All Time + Past Week |
+| FAB margin | 16.dp from edges | Standard Material 3 |
+
+### 10.7.5 Component cookbook
+
+The reusable widgets the Habit Tracker evolved. Re-use these names so
+new apps feel familiar.
+
+#### `SettingsCard`
+
+Rounded surface-container card. Always pass `contentPadding = 0.dp`
+and let the rows handle their own padding so heights stay aligned.
+
+```kotlin
+@Composable
+private fun SettingsCard(
+    contentPadding: Dp = 16.dp,
+    content: @Composable () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) { Box(Modifier.padding(contentPadding)) { content() } }
+}
+```
+
+#### `SectionCaption`
+
+Uppercase, primary-colour, `labelMedium`. Sits above each card. Never
+add an icon — captions are pure typography.
+
+#### Row family
+
+- `CompactSwitchRow(label, checked, onCheckedChange)` — toggle row.
+- `WeekStartNavRow` / `NavRow(icon, label, onClick)` — chevron rows.
+  *Icon parameter is kept for source-compat with previous call sites
+  but is intentionally not rendered.*
+- `StepperRow(label, value, min, max, onChange)` — value with -/+
+  stepper.
+- `TimeRow(label, time, onPick)` — opens `TimePickerDialog`.
+- `ChipChoice(label, selected, onClick)` — segmented chip used for
+  3-way / 4-way picks (e.g. NFC action). Equal weight via
+  `Modifier.weight(1f)` so labels of varying length still align.
+
+All of the above respect `SETTINGS_ROW_MIN_HEIGHT` and use
+`padding(horizontal = 16.dp, vertical = 4.dp)`.
+
+#### `Divider()`
+
+Wrap M3's `HorizontalDivider` with a softer alpha:
+
+```kotlin
+@Composable
+private fun Divider() {
+    HorizontalDivider(
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+        modifier = Modifier.padding(horizontal = 16.dp),
+    )
+}
+```
+
+#### `HabitCard` (= "ItemCard" pattern)
+
+A 2-col grid card with: large coloured `IconBadge` (top-left), title
+(`titleMedium`, max 1 line, ellipsis), subtitle pill row showing
+state (e.g. `📅 1 of 3`, `🔄 in 3 days`, "Done this week"). The whole
+card is `combinedClickable` (tap = primary action, long-press =
+overview dialog). Background = the habit's `containerColor()`,
+foreground text = its `contentColor()`.
+
+#### `HabitOverviewDialog` (= "Item Overview" pattern)
+
+Long-press on any list item opens a polished overview dialog that:
+
+- Header row: large IconBadge → title (`titleMedium`, **single line,
+  ellipsis** so long names never push the icon row down) +
+  `FrequencyChip` underneath → trailing icon row of state actions
+  (Skip, Pause) + an Edit pencil. *No `X` close button — tap-outside
+  dismisses.*
+- Optional one-line description.
+- 3 stat tiles (e.g. Current 🔥 / Best 🏆 / Total ✅) in equal-weight
+  weight=1f Surfaces.
+- 7-day mini-strip (or N-day) with Mon–Sun labels. Use the same
+  `DayCellShape` enum as the equivalent grid view (`Completed`,
+  `Skipped`, `Paused`) so visual language is shared.
+- Footer with "Tracking for N days" + "X% completion".
+
+The dialog **re-reads the underlying item from the live state** every
+frame, so external mutations (NFC scan, widget tap, notification
+action) reflect instantly while the dialog is open.
+
+#### `HabitEditorDialog` (= "Editor" pattern)
+
+`AlertDialog` body with:
+
+- Identity card: 56dp `IconBadge` button (opens icon+colour picker
+  combo) + title `OutlinedTextField` + multi-line description field.
+- `EditorSection("FREQUENCY") { 2x2 grid of FrequencyOption cards }`
+  using equal `Modifier.weight(1f)` so labels line up.
+- A `CompactStepper` with `(Int) -> String` lambda label so the row
+  reads naturally ("Every 3 days", "1 time per week").
+- `EditorSection("NFC TAG LINK") { CopyShareWriteRow }` — never show
+  the URL itself; offer Copy / Share / Write actions only. A `?` icon
+  in the section header opens a Material popover with the explanation.
+- **No delete button in the editor.** Deletion is only possible from
+  the Archived screen, gated behind archive-first → delete. This
+  prevents accidental loss of streak history.
+- Save sits bottom-right, Cancel bottom-left.
+
+### 10.7.6 Navigation pattern
+
+- **Single Activity, NavHost, three top-level pages in a `HorizontalPager`.**
+  Pages are 0-indexed; pin the user-facing landing page to the middle
+  (`TODAY_PAGE_INDEX = 1`) so swipes reach it from either side.
+- **Two-way bottom nav ↔ pager sync.** Bottom-bar `selected` reads
+  `pagerState.currentPage`; tab tap calls
+  `pagerState.animateScrollToPage(index)`. Tapping the already-selected
+  tab fires a small confirmation haptic.
+- **`beyondViewportPageCount = 1`** — adjacent page composed for
+  instant swipes, but never all three at once.
+- **`userScrollEnabled = settings.swipeToNavigate && !settings.zenMode`**
+  — make pager swipe a user setting, and force off in any "lockdown"
+  mode.
+- **Detail screens push onto NavHost as separate destinations.** Their
+  bottom bar disappears (Settings, Archive, Reorder, etc.).
+- **Deep links / NFC URLs** use a dedicated `app://host/<entityId>`
+  scheme with an `intent-filter` on the launcher activity. A separate
+  `NfcCompletionActivity` handles the URL and dispatches according to
+  the user's chosen behaviour (background / overlay / open app).
+
+### 10.7.7 Haptics
+
+Every meaningful tap should give physical feedback. Build a single
+`Haptics` helper with three intensities:
+
+```kotlin
+class Haptics(private val view: android.view.View) {
+    fun light()       = view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+    fun completion()  = view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+    fun longPress()   = view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+}
+```
+
+| Interaction | Intensity |
+|---|---|
+| Habit tap → complete | `completion()` |
+| FAB tap | `completion()` |
+| Long-press to open overview | `longPress()` |
+| Page swipe / tab change | `light()` *(suppress on initial composition)* |
+| Tap already-selected tab | `light()` |
+| Reorder up/down | `light()` |
+| Theme/NFC chip change | `light()` |
+| Reorder / Archived nav row | `light()` |
+
+Use a `LaunchedEffect(pagerState.currentPage) { … }` with a
+`firstFrame` flag to avoid haptics on launch.
+
+### 10.7.8 Confetti / celebration overlays
+
+For the "you did it" moment (e.g. completing the last outstanding
+item of the day):
+
+- ~500 particles, ~5.5s animation, fall through 100% of screen
+  height before fading out.
+- Stagger particle launch with `startDelay` so the burst feels like a
+  real shower, not a wall.
+- Apply a global tail-fade (`alpha *= (1f - (t - 0.88f) / 0.12f)`) so
+  the animation never snaps to nothing — it fades smoothly over the
+  last 12% of the timeline.
+- Particle colours sample from the app's palette `accent` channel.
+- Off-screen culling: skip drawing particles below `h + 40f`.
+
+### 10.7.9 NFC architecture (only relevant if app uses NFC)
+
+- One URL per *item* (e.g. per habit) using an app-private scheme
+  (`appname://entity/<id>`) — never `https`, so scanning never opens a
+  browser.
+- A dedicated `NfcCompletionActivity` (`@android:theme/Theme.Translucent.NoTitleBar`)
+  reads the URL, looks up the item, and dispatches one of:
+    1. **Background** — mark complete, finish silently.
+    2. **Overlay** — show a transparent fullscreen celebration overlay
+       for ~2s.
+    3. **Open app** — mark complete, start the launcher activity, finish.
+- Overlay activity uses a fully transparent theme so the overlay
+  floats over whatever app the user was in.
+- Provide an in-app NFC writer screen (`HostApduService` not needed
+  for tag-write; use `NfcAdapter.enableReaderMode` / `Ndef.writeNdefMessage`).
+- Tag URL is *generated*, not user-typed. Surface Copy / Share / Write
+  buttons in the editor; never show the raw URL.
+
+### 10.7.10 Mode switches
+
+Modes are global app states that lock or unlock entire feature sets.
+Pattern: a single boolean in DataStore + a `setMode(Boolean)` method
++ defensive guards everywhere a mode-disabled feature is reached.
+
+#### Implemented in Habit Tracker
+
+| Mode | What it locks | What stays |
+|---|---|---|
+| `swipeToNavigate = false` | Pager swipe | Bottom-bar tabs |
+| `allowSkips = false` | Skip icon in overview, Skip option in long-press | Skip data preserved |
+| `allowPauses = false` | Pause icon, Pause option | Pause data preserved |
+| `dailyHabitsOnly = true` | Non-daily frequency options in editor | Existing non-dailies prompted to archive via warning dialog |
+| `zenMode = true` | Bottom nav, FAB, top-bar archive icon, every dialog, all non-Today pages, every Settings section except Zen toggle | Tap-to-complete on Today + ability to disable Zen via Settings |
+
+Each mode flag should:
+
+- Default to the previous behaviour (so upgrading users see no
+  change).
+- Be guarded with a `LaunchedEffect(flag) { if (flag) clearPendingState() }`
+  to drop stale state when the mode flips.
+- Use **early returns**, not deep `if` nests, when a mode strips a
+  large portion of UI:
+
+```kotlin
+if (settings.zenMode) return@Column
+```
+
+### 10.7.11 Reminders / scheduled work
+
+If the app needs daily/scheduled notifications:
+
+- Use `AlarmManager.setExactAndAllowWhileIdle` for minute-perfect
+  firing; fall back to `setAndAllowWhileIdle` on devices that don't
+  grant `SCHEDULE_EXACT_ALARM`.
+- Wrap exact-alarm scheduling in `runCatching { … }` and degrade
+  silently to inexact on `SecurityException`.
+- A receiver consults the repository at fire-time so it sees the
+  latest state (don't pre-bake a list at scheduling time).
+- Filter "outstanding items" through the same logic the UI uses
+  (e.g. `isVisuallyCompletedOn(today, weekStart)`), so reminders
+  respect frequency rules and the user's week-start.
+- Provide both a **global** "Daily reminders" toggle and a **per-item**
+  "Include in reminders" toggle. Surface the per-item toggle on its
+  own dedicated `Reminders for <Items>` screen, **not** inside the
+  item overview dialog (overview dialogs should stay focused on
+  display, not configuration).
+- Provide a `setOf("First reminder", "Last reminder")` time-pair when
+  `timesPerDay > 1` and evenly distribute the rest.
+
+### 10.7.12 Lists with reorder + archive + delete
+
+- **Reorder lives on its own screen**, not on the main list. Up/down
+  buttons per row + drag handle. Persist via a `Long ordering` column
+  on the entity.
+- **Archive** is a soft-delete. Archived items get their own screen;
+  delete is only available from there.
+- **Delete is always one tap behind a confirmation `AlertDialog`.**
+  Title: "Delete `<Name>`?" — body explains what's lost (streaks,
+  history). Destructive action uses `MaterialTheme.colorScheme.error`.
+
+### 10.7.13 Editor / picker layouts
+
+- **Equal-weight cards beat FlowRow chips** for picks of 2–6 options.
+  A 2×2 or 1×3 `Row { … weight(1f) … }` aligns labels of varying
+  length cleanly.
+- **Use `(Int) -> String` lambdas in steppers** so the value text
+  reads naturally ("Every 3 days") instead of "3" with a separate
+  suffix label.
+- **Title-case every multi-word heading** ("All Time", "Past Week",
+  "Edit Habit", "NFC Tag Link"). Articles like *a / an / the* stay
+  lowercase ("Choose an Icon").
+
+### 10.7.14 Per-cell long-press menus (grid editing)
+
+For grids where each cell represents a state (e.g. day chips):
+
+- Tap = primary toggle.
+- Long-press = `DropdownMenu` of state choices (Completed / Skipped /
+  Pause / Clear).
+- Visual language for each state must match the canonical view
+  (e.g. All Time grid). Define a single `enum class DayCellShape` and
+  reuse it.
+- A long-press that lands on an "Already in this state" toggle clears
+  it instead.
+
+### 10.7.15 Widgets (Glance)
+
+If the app exposes a home-screen widget:
+
+- Use Glance, declared in the version catalogue under
+  `[libraries.glance]`.
+- Configuration activity lets the user pick **which items** the
+  widget shows; persisted per `appWidgetId`.
+- Widget polls `repository.itemsFlow` and updates on every mutation
+  via `GlanceAppWidgetManager.update`.
+- Tap-to-act calls a `RemoteAction` that opens an `Activity` (or a
+  `BroadcastReceiver` if the action is fully background-safe).
+- **Glance has no long-press** — don't try to fake one. Only expose
+  the primary action; rich detail stays in the app.
+- Provide a curated XML/PNG `previewLayout` so the widget looks good
+  in the picker.
+
+### 10.7.16 Element of surprise — the "delight" budget
+
+A single app should have ≤2 surprise/delight moments. Too many feels
+gimmicky. The Habit Tracker uses:
+
+1. **Confetti shower** when the user completes the last outstanding
+   habit of the day.
+2. **NFC overlay celebration** when an NFC scan succeeds with
+   `Overlay` mode chosen.
+
+Resist adding more. Reserve animations for state-transitions that
+*confirm a meaningful action*; never decorate idle UI.
+
+### 10.7.17 Defaults & data migration
+
+- Every new field on a persisted model gets a default value so old
+  serialised data stays loadable: `val newField: Boolean = true` and
+  the JSON decoder must use `ignoreUnknownKeys = true`.
+- Every new DataStore key gets a `?: defaultValue` in the read path.
+- Never reorder serialisable enum values — append new ones.
+
+### 10.7.18 Build hygiene
+
+- Always finish a session with `./gradlew :app:assembleDebug` green.
+- Add `@Suppress("UNUSED_PARAMETER") val unused = icon` rather than
+  removing a parameter that other call sites still pass — keeps the
+  diff tiny and source-compatible.
+- Comments explain *why*, not *what*. Aim for short paragraphs above
+  non-obvious blocks; no trailing line comments on every statement.
+- The user manages versioning + the changelog via a script; **never**
+  edit `app/build.gradle.kts` `versionCode` / `versionName` or
+  `CHANGELOG.md`.
+
+### 10.7.19 Settings page canonical structure
+
+Apply this order in **every app**:
+
+1. **Mode** card (e.g. Zen) — global mode switches that hide other UI.
+2. **Appearance** — theme picker + AMOLED toggle.
+3. **Reminders** — daily-reminder toggle + frequency + time pickers.
+4. **General** — week-start, behaviour toggles, navigation rows
+   (Reorder, Archive, Reminders-for-items, Export, Import).
+5. **NFC tag scans** *(if app uses NFC)*.
+6. **About** — app name + version pill.
+
+Each section: `SectionCaption("Name")` followed by exactly one
+`SettingsCard`. Inter-section gap is 20dp. Inside the card, every row
+shares `SETTINGS_ROW_MIN_HEIGHT` and is separated from the next by a
+`Divider()`.
+
+### 10.7.20 Quick checklist for new apps
+
+Before considering the first usable build done, verify:
+
+- [ ] Settings screen follows the canonical structure.
+- [ ] Zen-style global mode is at least *considered* (not always
+  needed; document why if omitted).
+- [ ] Haptics on every meaningful interaction; intensities match the
+  table above.
+- [ ] No icons inside settings rows.
+- [ ] All multi-word headings are Title Case.
+- [ ] No `X` close button on info modals — tap-outside only.
+- [ ] Long item names use `maxLines = 1, overflow = Ellipsis` in
+  title rows.
+- [ ] Every persisted field defaults to legacy behaviour.
+- [ ] `:app:assembleDebug` is green.
+- [ ] No edits to `versionCode`, `versionName`, or `CHANGELOG.md`.
 
 ---
 
@@ -1467,12 +1727,12 @@ Ensure `@Preview` composables are inside `@Composable` functions and that
 
 - [ ] `./gradlew :app:assembleDebug` succeeds locally.
 - [ ] App actually does what it's supposed to do (manual smoke test on
-      device or emulator).
+  device or emulator).
 - [ ] All 5 GitHub secrets are set.
 - [ ] Repo exists at `github.com/MatejGroombridge/<slug>` and `main` is
-      pushed.
+  pushed.
 - [ ] CHANGELOG.md has a meaningful description for the upcoming release
-      (auto-handled by `./bin/changeset`).
+  (auto-handled by `./bin/changeset`).
 - [ ] No personal data, secrets, or paths are hardcoded in the source.
 - [ ] If the app uses INTERNET, the permission is in AndroidManifest.xml.
 
