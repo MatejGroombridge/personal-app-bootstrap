@@ -921,8 +921,7 @@ Add app-specific sections (Notifications, Sync, Data, etc.) **between** Appearan
 ### 10.7.2 Colour & palette discipline
 
 - **Curate, don't multiply.** A palette of 8 entries with strong hue
-  separation reads better than 14 close ones. Audit for duplicates
-  (e.g. blush vs. rose were almost identical — replaced with teal).
+  separation reads better than 14 close ones.
 - **Order palette entries along the colour wheel.** When a user picks
   a colour from a chip strip, the strip should flow
   `warm → green → cyan → blue → cool` so adjacent chips look
@@ -933,6 +932,20 @@ Add app-specific sections (Notifications, Sync, Data, etc.) **between** Appearan
     - `dark` = card background in dark mode
     - `accent` = stronger fill used for icon tiles, chips, and confetti
     - `onColor` = legible text/icon colour over `light`
+
+  **Canonical 8-colour palette:**
+
+  | Key | Label | Light | Dark | Accent | On colour |
+  | --- | --- | --- | --- | --- | --- |
+  | `blush` | Blush | `#FFE0E6` | `#5A3A42` | `#F7A6B5` | `#3A1F25` |
+  | `peach` | Peach | `#FFE3D1` | `#5A3F30` | `#FFB48A` | `#3A2418` |
+  | `butter` | Butter | `#FFF4C2` | `#55502B` | `#FFE066` | `#3A330A` |
+  | `mint` | Mint | `#D1F0DA` | `#2E4D3A` | `#8DD6A4` | `#143222` |
+  | `teal` | Teal | `#CFE8E4` | `#2F4D49` | `#8DCDC4` | `#143230` |
+  | `sky` | Sky | `#D3E8F5` | `#2F4756` | `#8FC4E0` | `#12303F` |
+  | `lavender` | Lavender | `#E3DAF5` | `#3F354F` | `#B7A5DD` | `#231A33` |
+  | `fog` | Fog | `#E2E5EA` | `#40454D` | `#B6BCC6` | `#22262D` |
+
 - **Persist by string key, not by enum/index.** Future palette edits
   must not invalidate stored data. Provide an `entry(key)` lookup that
   falls back to a `defaultEntry` if the key is unknown.
